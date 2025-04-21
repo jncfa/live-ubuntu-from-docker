@@ -144,11 +144,8 @@ RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o
     ubiquity \
     ubiquity-casper \
     ubiquity-frontend-gtk \
-    ubiquity-slideshow-ubuntu \
     ubiquity-ubuntu-artwork \    
     casper \
-    discover \
-    discover-data \
     grub-common \
     grub-efi-${TARGETARCH}-signed \
     laptop-detect \
