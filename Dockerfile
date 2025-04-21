@@ -121,7 +121,6 @@ RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o
     iproute2 \
     iptables \
     lvm2 \
-    nbd-client \
     nfs-common \
     open-iscsi \
     open-vm-tools \
@@ -129,7 +128,6 @@ RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o
     parted \
     efibootmgr \
     plymouth \
-    plymouth-theme-ubuntu-gnome-logo \
     && rm -rf /var/lib/apt/lists/*
 
 
