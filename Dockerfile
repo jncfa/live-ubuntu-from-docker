@@ -22,7 +22,7 @@ RUN debootstrap --merged-usr --arch="amd64" --variant=minbase --keyring=/usr/sha
 FROM --platform=linux/arm64 init-rootfs-cacher-base AS init-rootfs-cacher-arm64
 ARG UBUNTU_VERSION
 ENV UBUNTU_MIRROR=http://ports.ubuntu.com/ubuntu-ports/
-RUN debootstrap --merged-usr --arch="arm64" --variant=minbase --keyring=/usr/share/keyrings/ubuntu-master-keyring.gpg "${UBUNTU_VERSION:?}" /rootfs "${UBUNTU_MIRROR:?}"
+RUN debootstrap --merged-usr --arch="arm64" --variant=minbase --keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg "${UBUNTU_VERSION:?}" /rootfs "${UBUNTU_MIRROR:?}"
 
 # unify stage
 FROM init-rootfs-cacher-${TARGETARCH} AS init-rootfs-cacher
@@ -78,13 +78,13 @@ RUN ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
     && rm -rf /var/lib/apt/lists/*
 
 # Install ROS2
-RUN sudo add-apt-repository universe \
-    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
-    && echo "deb [arch=${TARGETARCH} signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu ${UBUNTU_VERSION} main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null \
-    && apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
-    ros-${ROS_VERSION}-ros-base \
-    python3-argcomplete \
-    && rm -rf /var/lib/apt/lists/*
+#RUN sudo add-apt-repository universe \
+#    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
+#    && echo "deb [arch=${TARGETARCH} signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu ${UBUNTU_VERSION} main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null \
+#    && apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
+#    ros-${ROS_VERSION}-ros-base \
+#    python3-argcomplete \
+#    && rm -rf /var/lib/apt/lists/*
 
 # clean-up
 RUN truncate -s 0 /etc/machine-id
@@ -119,7 +119,6 @@ RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o
     fdisk \
     gdisk \
     gettext \
-    haveged \
     iproute2 \
     iptables \
     lvm2 \
@@ -129,10 +128,8 @@ RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o
     open-vm-tools \
     openssh-server \
     parted \
-    ubuntu-advantage-tools \
-    tpm2-tools \
+    efibootmgr \
     plymouth \
-    plymouth-themes \
     plymouth-theme-ubuntu-gnome-logo \
     && rm -rf /var/lib/apt/lists/*
 
@@ -156,11 +153,7 @@ RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o
     discover \
     discover-data \
     grub-common \
-    grub-efi-amd64-signed \
-    grub-gfxpayload-lists \
-    grub-pc \
-    grub-pc-bin \
-    grub2-common \
+    grub-efi-${TARGETARCH}-signed \
     laptop-detect \
     locales \
     mtools \
@@ -227,8 +220,7 @@ RUN cat <<EOF > /image/README.diskdefines
 #define DISKNAME  ${DISKNAME}
 #define TYPE  binary
 #define TYPEbinary  1
-#define ARCH  ${TARGETARCH}}
-#define ARCHamd64  1
+#define ARCH  ${TARGETARCH}
 #define DISKNUM  1
 #define DISKNUM1  1
 #define TOTALNUM  0
@@ -272,14 +264,13 @@ ENV LANG=C.UTF-8
 
 RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
     xorriso \
+    mtools \
     grub-common \
     grub-efi \
-    grub-pc-bin \
-    mtools \
     grub-efi-${TARGETARCH}-signed \
     && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /build && cd /image && grub-mkrescue -v --set_all_file_dates 'Jan 1 00:00:00 UTC 1970' \
+RUN mkdir -p /build/ && cd /image && grub-mkrescue -v --set_all_file_dates 'Jan 1 00:00:00 UTC 1970' \
     --modification-date=1970010100000000 --fonts="ter-u16n" \
     --locales="" --themes="" -o /build/image.iso \
     -volid "RUBUNTU" -J -graft-points \
@@ -287,4 +278,4 @@ RUN mkdir -p /build && cd /image && grub-mkrescue -v --set_all_file_dates 'Jan 1
 
 FROM scratch AS iso-archive
 ARG TARGETARCH
-COPY --link --from=iso-builder /build/ /
+COPY --link --from=iso-builder /build /

@@ -18,11 +18,12 @@ cleanup(){
 trap cleanup EXIT
 # --cache-from image:buildcache-${ARCH} --cache-to image:buildcache-${ARCH} \
 
-ARCH=amd64
-docker buildx build --platform linux/amd64 \
-    -t image:build-${ARCH} \
+mkdir -p build
+DOCKER_BUILDKIT=1 docker buildx build --platform linux/amd64,linux/arm64 \
+    --no-cache \
+    -t image-builder:latest \
     -f Dockerfile --target iso-archive \
-    --output=type=local,dest=./ . #\
+    --output=type=local,dest=./ build #\
     #--progress plain . 2>&1 | tee build.log &
 #add_cleanup "kill -SIGINT $!"
 

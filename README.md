@@ -7,7 +7,8 @@ The stages are:
 - lite-image: installs the necessary packages and configures the system
 - final-image: installs the necessary packages and configures the system
 - final-image-iso-builder: builds the iso image
-- iso-image: contains just the
+- iso-image: contains just the iso archive
+
 ## Building
 
 To build the image, run the following command:

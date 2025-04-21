@@ -1,0 +1,37 @@
+name: Build and push dockerfiles
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    # run on the first of every month
+    # * is a special character in YAML so you have to quote this string
+    - cron: "0 0 1 * *"
+  workflow_dispatch:
+    inputs:
+      force-build:
+        type: choice
+        description: Force build all images
+        options:
+          - true
+          - false
+# Cancel in-progress runs of the same workflow
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-everything:
+    strategy:
+      matrix:
+        include:
+          - base-label: image-builder
+            tag: latest
+            dockerfile: ./Dockerfile
+    uses: ./.github/workflows/build_and_push_image_template.yml
+    with:
+      base-label: ${{ matrix.base-label }}
+      tag: ${{ matrix.tag }}
+      dockerfile: ${{ matrix.dockerfile }}
+      should-push: ${{ github.ref == 'refs/heads/main' }}
+      force-build: ${{ inputs.force-build == 'true' || github.ref == 'refs/heads/main' }}
+    secrets: inherit
