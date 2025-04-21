@@ -109,7 +109,6 @@ RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o
     systemd \
     systemd-resolved \
     systemd-timesyncd \
-    systemd-boot \
     systemd-oomd \
     polkitd \
     cryptsetup \
