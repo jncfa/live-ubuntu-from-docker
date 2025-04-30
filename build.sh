@@ -16,15 +16,25 @@ cleanup(){
 }
 
 trap cleanup EXIT
-# --cache-from image:buildcache-${ARCH} --cache-to image:buildcache-${ARCH} \
 
-mkdir -p build
-DOCKER_BUILDKIT=1 docker buildx build --platform linux/amd64,linux/arm64 \
-    --no-cache \
-    -t image-builder:latest \
-    -f Dockerfile --target iso-archive \
-    --output=type=local,dest=./ build #\
-    #--progress plain . 2>&1 | tee build.log &
-#add_cleanup "kill -SIGINT $!"
+mkdir -p build-context build-result
 
-#tail -f build.log
+export DOCKER_BUILDKIT=1
+
+# build up to the indicated stage
+STAGE=${1:-iso-archive}
+PLATFORMS=${PLATFORMS:-"linux/arm64,linux/amd64"}
+DATE=$(date "+%Y%m%d_%H%M%S")
+DOCKER_ARGS=()
+
+# for iso-archive, just dump the iso to the result folder
+if [ "$STAGE" = "iso-archive" ]; then
+    DOCKER_ARGS+=(--output "type=local,dest=./build-result/result-${DATE}")
+fi
+DOCKER_ARGS+=(--tag "image-builder/${STAGE}:latest")
+DOCKER_ARGS+=(--tag "image-builder/${STAGE}:${DATE}")
+DOCKER_ARGS+=(--target "${STAGE}")
+DOCKER_ARGS+=(--platform ${PLATFORMS})
+DOCKER_ARGS+=(-f Dockerfile)
+DOCKER_ARGS+=(--build-context local-context=./build-context)
+docker buildx build "${DOCKER_ARGS[@]}" .

@@ -3,51 +3,75 @@ ARG UBUNTU_VERSION=noble
 ARG ROS_VERSION=jazzy
 ARG TARGETARCH
 ARG DISKNAME="Install RUbuntu"
+ARG KERNEL_VARIANT="linux-lowlatency"
 
-FROM ubuntu:latest AS base
-FROM base AS init-rootfs-cacher-base
-
+FROM ubuntu:${UBUNTU_VERSION} AS base
+ENV DEBIAN_FRONTEND=noninteractive
 ARG UBUNTU_VERSION
+ARG ROS_VERSION
+ARG TARGETARCH
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# hadolint ignore=DL3022
+COPY --link --from=local-context apt.conf.d/ /etc/apt/apt.conf.d/
+
+FROM base AS init-rootfs-cacher-base
+RUN apt-get update && apt-get install -y  \
+    apt-utils \
     debootstrap \
     ubuntu-keyring \
     && rm -rf /var/lib/apt/lists/*
 
+# separate stage to set ubuntu mirrors according to target arch
+
+# hadolint ignore=DL3029
 FROM --platform=linux/amd64 init-rootfs-cacher-base AS init-rootfs-cacher-amd64
-ARG UBUNTU_VERSION
 ENV UBUNTU_MIRROR=http://archive.ubuntu.com/ubuntu/
-RUN debootstrap --merged-usr --arch="amd64" --variant=minbase --keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg "${UBUNTU_VERSION:?}" /rootfs "${UBUNTU_MIRROR:?}"
 
+# hadolint ignore=DL3029
 FROM --platform=linux/arm64 init-rootfs-cacher-base AS init-rootfs-cacher-arm64
-ARG UBUNTU_VERSION
 ENV UBUNTU_MIRROR=http://ports.ubuntu.com/ubuntu-ports/
-RUN debootstrap --merged-usr --arch="arm64" --variant=minbase --keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg "${UBUNTU_VERSION:?}" /rootfs "${UBUNTU_MIRROR:?}"
 
-# unify stage
-FROM init-rootfs-cacher-${TARGETARCH} AS init-rootfs-cacher
-FROM scratch AS lite-image
+# unify stage and inherit env vars accordingly
+# hadolint ignore=DL3006
+FROM init-rootfs-cacher-${TARGETARCH:?} AS init-rootfs-cacher
 
-ARG TARGETARCH
-ARG UBUNTU_VERSION
-ARG ROS_VERSION
+# added all components to make sure we have all the packages we need
+# minbase variant can be used but it is extremely tricky to specify all packages we need
+# as we get minor breakages all over the place
+RUN debootstrap --merged-usr --arch="${TARGETARCH}" --components=main,restricted,universe,multiverse --keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg  "${UBUNTU_VERSION:?}" /rootfs "${UBUNTU_MIRROR:?}" \
+    # delete resolv.conf to prevent it from being copied to the final image (systemd autogenerates it)
+    && rm /rootfs/etc/resolv.conf \
+    # apt cache is also not needed (and makes the image bigger)
+    && rm -rf /rootfs/var/cache/apt/archives/* && rm -rf /rootfs/var/lib/apt/lists/*
+
+FROM scratch AS init-rootfs
 
 ENV DEBIAN_FRONTEND=noninteractive
-ENV DEBCONF_NONINTERACTIVE_SEEN=true
-ENV LANG=C.UTF-8
+ARG UBUNTU_VERSION
+ARG ROS_VERSION
+ARG TARGETARCH
 
 COPY --link --from=init-rootfs-cacher /rootfs /
 
+# add our custom apt.conf.d docker hooks
+# hadolint ignore=DL3022
+COPY --link --from=local-context apt.conf.d/ /etc/apt/apt.conf.d/
+
+ENTRYPOINT [ "/bin/bash" ]
+
+FROM init-rootfs AS lite-image
+
 # base image setup (TODO: list references for this)
-RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
-    dbus systemd-sysv \ 
+RUN apt-get update && apt-get install -y  \
+    apt-utils \
+    libterm-readline-gnu-perl \
+    dbus \
     && rm -rf /var/lib/apt/lists/*
 
-RUN dbus-uuidgen >/etc/machine-id && ln -fs /etc/machine-id /var/lib/dbus/machine-id && \
-    dpkg-divert --local --rename --add /sbin/initctl && ln -s /bin/true /sbin/initctl
+RUN truncate -s 0 /etc/machine-id && ln -fs /etc/machine-id /var/lib/dbus/machine-id
 
 # install common programs
-RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
+RUN apt-get update && apt-get install -y  \
     jq \
     tar \
     curl \
@@ -60,148 +84,245 @@ RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o
     zstd \
     gnupg \
     xz-utils \
-    conntrack \
-    lsb-release \
     iputils-ping \
+    net-tools \
     ca-certificates \
     software-properties-common \
-    ubuntu-standard \
-    ubuntu-desktop \
-    ubuntu-keyring \
+    apparmor \
     binutils \
+    man \
+    manpages \
+    bash-completion \
     && rm -rf /var/lib/apt/lists/*
+
+# Install ROS2 because I want it :D
+# hadolint ignore=DL4006
+RUN add-apt-repository universe \
+    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
+    && echo "deb [arch=${TARGETARCH} signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu ${UBUNTU_VERSION} main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null \
+    && apt-get update && apt-get install -y  \
+    ros-${ROS_VERSION}-ros-base \
+    python3-argcomplete \
+    && rm -rf /var/lib/apt/lists/*
+
+FROM lite-image AS live-image
+
+ARG KERNEL_VARIANT
 
 # Install timezone
 RUN ln -fs /usr/share/zoneinfo/UTC /etc/localtime \
-    && apt-get update \
-    && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends tzdata \
+    && apt-get update && apt-get install -y  \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
-# Install ROS2
-#RUN sudo add-apt-repository universe \
-#    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
-#    && echo "deb [arch=${TARGETARCH} signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu ${UBUNTU_VERSION} main" | sudo tee /etc/apt/sources.list.d/ros2.list > /dev/null \
-#    && apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
-#    ros-${ROS_VERSION}-ros-base \
-#    python3-argcomplete \
-#    && rm -rf /var/lib/apt/lists/*
-
-# clean-up
-RUN truncate -s 0 /etc/machine-id
-RUN rm /sbin/initctl && dpkg-divert --rename --remove /sbin/initctl
-
-FROM lite-image AS final-image
-ARG TARGETARCH
-ARG UBUNTU_VERSION
-
-# add diversion back
-RUN dpkg-divert --local --rename --add /sbin/initctl && ln -s /bin/true /sbin/initctl
-
-# Install language
-RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
-    locales \
-    && locale-gen C.UTF-8 \
-    && update-locale LC_ALL=C.UTF-8 LANG=C.UTF-8 \
+# install packages that should be included for a more complete system
+RUN apt-get update && apt-get install -y  \
+    yaru-theme-gnome-shell \
+    yaru-theme-gtk \
+    yaru-theme-icon \
+    yaru-theme-sound \
+    ubuntu-wallpapers \
+    gsettings-ubuntu-schemas \
+    xserver-xorg \
+    ubuntu-keyring \
+    libpam-gnome-keyring \
+    gnome-keyring \
+    gnome-characters \
+    gnome-session  \
+    ubuntu-desktop \
+    apport-gtk \
+    policykit-desktop-privileges \
+    ubuntu-drivers-common \
+    rtkit \
+    fwupd \
+    fwupd-signed \
+    gnome-disk-utility \
+    usb-creator-gtk \
+    command-not-found \
     && rm -rf /var/lib/apt/lists/*
 
-# adds the rest of the system that doesnt make sense in a container environment
-RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
-    systemd \
-    systemd-resolved \
-    systemd-timesyncd \
-    systemd-oomd \
-    polkitd \
-    cryptsetup \
-    debianutils \
-    dosfstools \
-    e2fsprogs \
-    fdisk \
-    gdisk \
-    gettext \
-    iproute2 \
-    iptables \
-    lvm2 \
-    nfs-common \
-    open-iscsi \
-    open-vm-tools \
+# add a very cute bg as default
+# hadolint ignore=DL3022
+COPY --link --from=local-context cute-bg.png /usr/share/backgrounds/ubuntu-robotics.png
+RUN cat <<EOF > /usr/share/glib-2.0/schemas/20_better-background.gschema.override
+[org.gnome.desktop.background:ubuntu]
+picture-uri='file:///usr/share/backgrounds/ubuntu-robotics.png'
+[org.gnome.desktop.screensaver:ubuntu]
+picture-uri='file:///usr/share/backgrounds/ubuntu-robotics.png'
+EOF
+
+# compile schema to set the new bg
+RUN glib-compile-schemas /usr/share/glib-2.0/schemas
+
+# install network manager
+RUN apt-get update && apt-get install -y  \
+    network-manager \
+    network-manager-config-connectivity-ubuntu \
+    network-manager-gnome \
+    network-manager-openvpn \
+    network-manager-openvpn-gnome \
+    network-manager-pptp \
+    network-manager-pptp-gnome \
+    && rm -rf /var/lib/apt/lists/*
+RUN cat <<EOF > /etc/NetworkManager/NetworkManager.conf
+[main]
+rc-manager=unmanaged
+plugins=ifupdown,keyfile,systemd-resolved
+
+[ifupdown]
+managed=false
+
+[device]
+wifi.scan-rand-mac-address=no
+EOF
+
+# add more customizations to the image
+RUN apt-get update && apt-get install -y  \
+    avahi-daemon \
+    avahi-utils \
     openssh-server \
-    parted \
-    efibootmgr \
+    && rm -rf /var/lib/apt/lists/*
+
+# plymouth shows the cute splash screen during boot
+RUN apt-get update && apt-get install -y  \
     plymouth \
+    plymouth-label \
+    plymouth-theme-spinner \
+    plymouth-themes \
+    plymouth-theme-ubuntu-text \
     && rm -rf /var/lib/apt/lists/*
 
-
-RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
-    initramfs-tools \
-    kmod \
+# requirements for grub bootloader
+RUN apt-get update && apt-get install -y  \
+    grub-common \
+    grub-efi \
+    grub-efi-${TARGETARCH}-signed \
+    shim-signed \
     && rm -rf /var/lib/apt/lists/*
 
-RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
-    linux-lowlatency \
-    && rm -rf /var/lib/apt/lists/*
+# disable network manager for installer (to speed up installation)
+RUN dpkg-reconfigure network-manager && rm -f /etc/systemd/system/multi-user.target.wants/NetworkManager.service /etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service
 
-RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
+# re-enable after install
+RUN debconf-set-selections <<EOF
+ubiquity ubiquity/success_command string /bin/bash -c "ln -s /lib/systemd/system/NetworkManager.service /target/etc/systemd/system/multi-user.target.wants/NetworkManager.service && ln -s /lib/systemd/system/NetworkManager-wait-online.service /target/etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service"
+ubiquity mirror/suite string ${UBUNTU_VERSION}
+EOF
+
+# packages for live-boot
+RUN apt-get update && apt-get install -y  \
     ubiquity \
     ubiquity-casper \
     ubiquity-frontend-gtk \
-    ubiquity-ubuntu-artwork \    
+    ubiquity-ubuntu-artwork \
+    ubiquity-frontend-debconf \
+    ubiquity-slideshow-ubuntu \
+    localechooser-data \
     casper \
-    grub-common \
-    grub-efi-${TARGETARCH}-signed \
-    laptop-detect \
-    locales \
     mtools \
-    net-tools \
-    network-manager \
-    os-prober \
-    shim-signed \
-    user-setup \
-    wireless-tools \
     && rm -rf /var/lib/apt/lists/*
 
-# remove diversion
-RUN rm /sbin/initctl && dpkg-divert --rename --remove /sbin/initctl
-RUN kernel=$(ls /lib/modules | head -n1) && depmod -a "${kernel}" && update-initramfs -u -v -k "${kernel}"
+# install kernel, firmware and register initramfs
+RUN apt-get update && apt-get install -y  \
+    initramfs-tools \
+    && rm -rf /var/lib/apt/lists/*
 
-RUN dpkg-query -W --showformat='${Package} ${Version}\n' > /tmp/filesystem.manifest
+# kernel installation needs to be done after ubiquity to prevent having multiple
+# initrds generated
+# hadolint ignore=DL4006
+RUN apt-get update && apt-get install -y  \
+    kmod \
+    ${KERNEL_VARIANT} \
+    linux-firmware \
+    && rm -rf /var/lib/apt/lists/*  \
+    && kernel=$(ls /lib/modules | head -n1) && depmod -a "${kernel}" && update-initramfs -u -v -k "${kernel}"
 
-# prepare the common image layout
-FROM base AS iso-builder-base
+# generate manifests for later use
+RUN PACKAGES_TO_REMOVE="ubiquity ubiquity-casper ubiquity-frontend-gtk ubiquity-ubuntu-artwork ubiquity-frontend-debconf ubiquity-slideshow-ubuntu casper mtools localechooser-data discover discover-data os-prober laptop-detect" &&  \
+    dpkg-query -W --showformat='${Package} ${Version}\n' > /tmp/filesystem.manifest \
+    && cp /tmp/filesystem.manifest /tmp/filesystem.manifest-desktop && \
+    for i in ${PACKAGES_TO_REMOVE}; do \
+    sed -i "/${i}/d" /tmp/filesystem.manifest-desktop; \
+    done
+
+# delete all docker hooks we installed
+RUN rm -f /etc/apt.conf.d/docker-*
+
+# use hostplatform to build squashfs to speed up build
+# hadolint ignore=DL3029
+ARG BUILDPLATFORM
+FROM --platform=${BUILDPLATFORM} base AS squashfs-builder
+RUN apt-get update && apt-get install -y  \
+    squashfs-tools \
+    initramfs-tools \
+    && rm -rf /var/lib/apt/lists/*
+
+# extract kernel, initramfs, and make squashfs for casper
+RUN --mount=type=bind,from=live-image,source=/,dst=/rootfs,ro \
+    mkdir -p /image/casper && \
+    cp /rootfs/boot/vmlinuz-*-*-* /image/casper/vmlinuz && \
+    cp /rootfs/boot/initrd.img-*-*-* /image/casper/initrd
+
+# hadolint ignore=DL4006
+RUN --mount=type=bind,from=live-image,source=/,dst=/rootfs,ro \
+    printf $(du -sx --block-size=1 /rootfs | cut -f1) | tee /image/casper/filesystem.size && \
+    mksquashfs /rootfs /image/casper/filesystem.squashfs \
+    -noappend -no-duplicates -no-recovery \
+    -wildcards \
+    -comp zstd \
+    -e "var/cache/apt/archives/*" \
+    -e "root/*" \
+    -e "root/.*" \
+    -e "tmp/*" \
+    -e "tmp/.*" \
+    -e ".dockerenv" \
+    -e "sys/*" \
+    -e "sys/.*" \
+    -e "proc/*" \
+    -e "proc/.*" \
+    -e "swapfile"
+
+# fetch manifests
+COPY --link --from=live-image /tmp/filesystem.manifest /image/casper/filesystem.manifest
+COPY --link --from=live-image /tmp/filesystem.manifest-desktop /image/casper/filesystem.manifest-desktop
+
+# prepare ISO image layout and build image
+FROM base AS iso-builder
 ARG DISKNAME
 ARG TARGETARCH
 ARG UBUNTU_VERSION
-ENV PACKAGES_TO_REMOVE="ubiquity casper user-setup discover discover-data os-prober laptop-detect"
+ENV LANG=C.UTF-8
 
-RUN mkdir -p /image/casper && mkdir -p /image/boot/grub && mkdir -p /image/install
+RUN mkdir -p /image/casper /image/boot/grub /image/.disk
 
-RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
+# EFI packages are needed for UEFI boot support (seems to be handled automatically by grub-mkrescue)
+RUN apt-get update && apt-get install -y  \
+    mtools \
     xorriso \
-    squashfs-tools \
+    grub-common \
+    grub-efi \
+    grub-efi-${TARGETARCH}-signed \
+    shim-signed \
     && rm -rf /var/lib/apt/lists/*
 
-RUN cat <<EOF > /image/boot/grub/grub.cfg 
-    search --set=root --file /ubuntu
-    
+# grub config to make ISO bootable
+RUN cat <<EOF > /image/boot/grub/grub.cfg
     insmod all_video
-    
+
     set default="0"
-    set timeout=30
-    
-    menuentry "Try Ubuntu FS without installing" {
-        linux /casper/vmlinuz boot=casper nopersistent toram quiet splash ---
+    set timeout=5
+
+    menuentry "Try or install Ubuntu" {
+        set gfxpayload=keep
+        linux /casper/vmlinuz boot=casper maybe-ubiquity quiet splash ---
         initrd /casper/initrd
     }
-    
-    menuentry "Install Ubuntu FS" {
-        linux /casper/vmlinuz boot=casper only-ubiquity quiet splash ---
-        initrd /casper/initrd
-    }
-    
+
     menuentry "Check disc for defects" {
         linux /casper/vmlinuz boot=casper integrity-check quiet splash ---
         initrd /casper/initrd
     }
-    
+
     grub_platform
     if [ "\$grub_platform" = "efi" ]; then
     menuentry 'UEFI Firmware Settings' {
@@ -210,66 +331,38 @@ RUN cat <<EOF > /image/boot/grub/grub.cfg
     fi
 EOF
 
-RUN cat <<EOF > /image/README.diskdefines
-#define DISKNAME  ${DISKNAME}
-#define TYPE  binary
-#define TYPEbinary  1
-#define ARCH  ${TARGETARCH}
-#define DISKNUM  1
-#define DISKNUM1  1
-#define TOTALNUM  0
-#define TOTALNUM0  1
+# the following files are needed in order to make this ISO compatible
+# with tools like usb-creator-gtk
+RUN cat > /image/.disk/cd_type <<EOF
+full_cd/single
 EOF
 
-RUN --mount=type=bind,from=final-image,source=/,dst=/rootfs,ro \
-    cp /rootfs/boot/vmlinuz-*-*-* /image/casper/vmlinuz && \
-    cp /rootfs/boot/initrd.img-*-*-* /image/casper/initrd
+RUN cat > /image/.disk/info <<EOF
+    Custom Ubuntu $UBUNTU_VERSION Live Image - $TARGETARCH
+EOF
 
-# make squashfs and get fs size
-RUN --mount=type=bind,from=final-image,source=/,dst=/rootfs,ro \
-    mksquashfs /rootfs /image/casper/filesystem.squashfs \
-    -noappend -no-duplicates -no-recovery \
-    -wildcards \
-    -comp xz -b 1M -Xdict-size 100% \
-    -e "var/cache/apt/archives/*" \
-    -e "root/*" \
-    -e "root/.*" \
-    -e "tmp/*" \
-    -e "tmp/.*" \
-    -e "swapfile" && \ 
-    printf $(du -sx --block-size=1 /rootfs | cut -f1) | tee /image/casper/filesystem.size
+RUN touch /image/.disk/base_installable
 
-# create manifests for casper
-RUN --mount=type=bind,from=final-image,source=/,dst=/rootfs,ro \
-    cp /rootfs/tmp/filesystem.manifest /image/casper/filesystem.manifest && \
-    cp /image/casper/filesystem.manifest /image/casper/filesystem.manifest-desktop && \
-    for i in ${PACKAGES_TO_REMOVE}; do \
-    sed -i "/${i}/d" /image/casper/filesystem.manifest-desktop; \
-    done 
+# get all generated files from squashfs builder
+COPY --link --from=squashfs-builder /image/ /image/
 
 # Generate md5sum.txt. Generate it two times, to get the own checksum right.
-RUN find /image -type f -print0 | xargs -0 md5sum > "/image/md5sum.txt"
+# hadolint ignore=DL3003,DL4006
+RUN cd /image && find . -type f -print0 | xargs -0 md5sum > "/image/md5sum.txt"
 
-FROM iso-builder-base AS iso-builder
-
-ENV DEBIAN_FRONTEND=noninteractive
-ENV DEBCONF_NONINTERACTIVE_SEEN=true
-ENV LANG=C.UTF-8
-
-RUN apt-get update && apt-get install -y -o Dpkg::Options::="--force-confdef" -o Dpkg::Options::="--force-confold" --no-install-recommends \
-    xorriso \
-    mtools \
-    grub-common \
-    grub-efi \
-    grub-efi-${TARGETARCH}-signed \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN mkdir -p /build/ && cd /image && grub-mkrescue -v --set_all_file_dates 'Jan 1 00:00:00 UTC 1970' \
-    --modification-date=1970010100000000 --fonts="ter-u16n" \
-    --locales="" --themes="" -o /build/image.iso \
-    -volid "RUBUNTU" -J -graft-points \
-    "." 
+# build iso
+# hadolint ignore=DL3003
+RUN mkdir -p /build/ && cd /image && grub-mkrescue -v \
+    # reproducability stuff
+    --set_all_file_dates 'Jan 1 00:00:00 UTC 1970' \
+    --modification-date=1970010100000000 \
+    # joliet is needed for windows to be able to read the iso
+    -joliet -iso-level 3 \
+    -o /build/image.iso \
+    "."
 
 FROM scratch AS iso-archive
 ARG TARGETARCH
 COPY --link --from=iso-builder /build /
+COPY --link --from=iso-builder /image/casper/filesystem.manifest /
+COPY --link --from=iso-builder /image/casper/filesystem.manifest-desktop /
