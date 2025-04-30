@@ -2,3 +2,4 @@ build
 *iso
 build.log
 build-result
+.DS_Store
