@@ -164,6 +164,8 @@ RUN apt-get update && apt-get install -y  \
     network-manager-pptp \
     network-manager-pptp-gnome \
     && rm -rf /var/lib/apt/lists/*
+
+# configured networkmanager to play nice with systemd-resolved
 RUN cat <<EOF > /etc/NetworkManager/NetworkManager.conf
 [main]
 rc-manager=unmanaged
