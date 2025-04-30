@@ -335,15 +335,14 @@ EOF
 
 # the following files are needed in order to make this ISO compatible
 # with tools like usb-creator-gtk
-RUN cat > /image/.disk/cd_type <<EOF
+RUN touch /image/.disk/base_installable && \
+    cat > /image/.disk/cd_type <<EOF
 full_cd/single
 EOF
 
 RUN cat > /image/.disk/info <<EOF
     Custom Ubuntu $UBUNTU_VERSION Live Image - $TARGETARCH
 EOF
-
-RUN touch /image/.disk/base_installable
 
 # get all generated files from squashfs builder
 COPY --link --from=squashfs-builder /image/ /image/

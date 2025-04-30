@@ -1,4 +1,4 @@
-# Build your own Ubuntu image with Docker
+# Build your own Ubuntu Live Image with Docker
 
 This is a example dockerfile that contains a multi-stage Buildkit build for a Ubuntu flavored image, supporting both arm64 and amd64 architectures.
 
