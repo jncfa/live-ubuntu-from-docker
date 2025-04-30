@@ -24,3 +24,4 @@ bash build.sh
 Useful resources for this project:
 - Live Custom Ubuntu: https://github.com/mvallim/live-custom-ubuntu-from-scratch
 - T2 Ubuntu Linux: https://github.com/t2linux/T2-Ubuntu
+- Archboot: https://github.com/tpowa/Archboot
