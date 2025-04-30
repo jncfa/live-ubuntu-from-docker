@@ -24,13 +24,13 @@ jobs:
     strategy:
       matrix:
         include:
-          - base-label: image-builder
+          - base-label: image-builder-amd64
             tag: latest
             dockerfile: ./Dockerfile
             platforms: linux/amd64
             build-contexts: |
               local-context=./build-context
-          - base-label: image-builder
+          - base-label: image-builder-arm64
             tag: latest
             dockerfile: ./Dockerfile
             runner: ubuntu-24.04-arm
