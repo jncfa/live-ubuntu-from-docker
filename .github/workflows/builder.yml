@@ -28,11 +28,15 @@ jobs:
             tag: latest
             dockerfile: ./Dockerfile
             platforms: linux/amd64
+            build-contexts: |
+              local-context=./build-context
           - base-label: image-builder
             tag: latest
             dockerfile: ./Dockerfile
             runner: ubuntu-24.04-arm
             platforms: linux/arm64
+            build-contexts: |
+              local-context=./build-context
     uses: ./.github/workflows/build_and_push_image_template.yml
     with:
       base-label: ${{ matrix.base-label }}
@@ -40,4 +44,5 @@ jobs:
       dockerfile: ${{ matrix.dockerfile }}
       should-push: ${{ github.ref == 'refs/heads/main' }}
       force-build: ${{ inputs.force-build == 'true' || github.ref == 'refs/heads/main' }}
+      build-contexts: ${{ matrix.build-contexts }}
     secrets: inherit

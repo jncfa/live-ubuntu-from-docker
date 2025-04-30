@@ -31,7 +31,11 @@ on:
       platforms:
         required: false
         type: string
-        default: linux/amd64,linux/arm64,linux/arm64/v8
+        default: linux/amd64,linux/arm64
+      build-contexts:
+        required: false
+        type: string
+        default: ""
 jobs:
   changes:
     runs-on: ${{ inputs.runner }}
@@ -84,6 +88,7 @@ jobs:
           tags: |
             ${{ env.image-name }}
             ${{ env.image-name }}-${{ steps.date.outputs.date }}
+          build-contexts: ${{ inputs.build-contexts }}
           cache-from: |
             type=registry,ref=${{ env.image-cacher-name }}
           cache-to: |
