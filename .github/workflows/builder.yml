@@ -27,6 +27,7 @@ jobs:
           - base-label: image-builder-amd64
             tag: latest
             dockerfile: ./Dockerfile
+            runner: ubuntu-latest
             platforms: linux/amd64
             build-contexts: |
               local-context=./build-context
