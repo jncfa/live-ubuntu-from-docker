@@ -1,6 +1,6 @@
 
 ARG UBUNTU_VERSION=noble
-ARG ROS_VERSION=jazzy
+ARG ROS_VERSION=kilted
 ARG TARGETARCH
 ARG DISKNAME="Install RUbuntu"
 ARG KERNEL_VARIANT="linux-lowlatency"
@@ -98,12 +98,12 @@ RUN apt-get update && apt-get install -y  \
 # Install ROS2 because I want it :D
 # hadolint ignore=DL4006
 RUN add-apt-repository universe \
-    && curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg \
-    && echo "deb [arch=${TARGETARCH} signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu ${UBUNTU_VERSION} main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null \
-    && apt-get update && apt-get install -y  \
-    ros-${ROS_VERSION}-ros-base \
-    python3-argcomplete \
+    && curl -o /tmp/ros2-testing-apt-source.deb "https://ftp.osuosl.org/pub/ros/packages.ros.org/ros2-testing/ubuntu/pool/main/r/ros-apt-source/ros2-testing-apt-source_1.0.0~$(. /etc/os-release && echo $VERSION_CODENAME)_all.deb" \
+    && apt-get install -y /tmp/ros2-testing-apt-source.deb \
+    && apt-get update && apt-get install -y ros-dev-tools ros-${ROS_VERSION}-desktop \
     && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /etc/profile.d && echo "source /opt/ros/${ROS_VERSION}/setup.bash" >> /etc/profile.d/10_source_ros.sh
 
 FROM lite-image AS live-image
 
@@ -353,7 +353,7 @@ RUN cd /image && find . -type f -print0 | xargs -0 md5sum > "/image/md5sum.txt"
 
 # build iso
 # hadolint ignore=DL3003
-RUN mkdir -p /build/ && cd /image && grub-mkrescue -v \
+RUN mkdir -p /build/ && cd /image && grub-mkrescue \
     # reproducability stuff
     --set_all_file_dates 'Jan 1 00:00:00 UTC 1970' \
     --modification-date=1970010100000000 \
