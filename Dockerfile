@@ -294,6 +294,7 @@ ARG DISKNAME
 ARG TARGETARCH
 ARG UBUNTU_VERSION
 ENV LANG=C.UTF-8
+ARG ROS_VERSION
 
 RUN mkdir -p /image/casper /image/boot/grub /image/.disk
 
@@ -305,6 +306,7 @@ RUN apt-get update && apt-get install -y  \
     grub-efi \
     grub-efi-${TARGETARCH}-signed \
     shim-signed \
+    apt-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # grub config to make ISO bootable
@@ -335,17 +337,19 @@ EOF
 
 # the following files are needed in order to make this ISO compatible
 # with tools like usb-creator-gtk
-RUN touch /image/.disk/base_installable && \
-    cat > /image/.disk/cd_type <<EOF
+RUN touch /image/.disk/base_installable && cat > /image/.disk/cd_type <<EOF
 full_cd/single
 EOF
 
 RUN cat > /image/.disk/info <<EOF
-    Custom Ubuntu $UBUNTU_VERSION Live Image - $TARGETARCH
+    ROS2Live${ROS_VERSION} Ubuntu $UBUNTU_VERSION Live Image - ${TARGETARCH}
 EOF
 
 # get all generated files from squashfs builder
 COPY --link --from=squashfs-builder /image/ /image/
+
+# create a dummy apt repo that contains nothing to make apt-setup happy
+RUN mkdir -p /image/pool && cd /image/pool && apt-ftparchive packages . > Packages && apt-ftparchive release . > Release
 
 # Generate md5sum.txt. Generate it two times, to get the own checksum right.
 # hadolint ignore=DL3003,DL4006
