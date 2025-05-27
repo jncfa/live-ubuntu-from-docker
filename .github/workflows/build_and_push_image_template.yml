@@ -86,7 +86,7 @@ jobs:
         uses: docker/setup-qemu-action@v3
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-      - name: Build and push
+      - name: Build and push cache
         uses: docker/build-push-action@v6
         with:
           push: ${{ inputs.should-push }}
@@ -96,7 +96,12 @@ jobs:
             ${{ env.image-name }}
             ${{ env.image-name }}-${{ steps.date.outputs.date }}
           build-contexts: ${{ inputs.build-contexts }}
+          outputs: type=local,dest=/tmp/buildx-output
           cache-from: |
             type=registry,ref=${{ env.image-cacher-name }}
           cache-to: |
             type=registry,ref=${{ env.image-cacher-name }},mode=max
+      - uses: softprops/action-gh-release@v2.2.1
+        with:
+          name: "${{ github.ref_name }} — ${{ steps.date.outputs.date }}"
+          files: "/tmp/buildx-output/*.iso"
