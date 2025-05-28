@@ -98,7 +98,7 @@ RUN apt-get update && apt-get install -y  \
 # Install ROS2 because I want it :D
 # hadolint ignore=DL4006
 RUN add-apt-repository universe \
-    && curl -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/1.1.0/ros2-apt-source_1.1.0.$(. /etc/os-release && echo $VERSION_CODENAME)_all.deb" \
+    && curl -vL -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/1.1.0/ros2-apt-source_1.1.0.$(. /etc/os-release && echo $VERSION_CODENAME)_all.deb" \
     && apt-get install -y /tmp/ros2-apt-source.deb \
     && apt-get update && apt-get install -y ros-dev-tools ros-${ROS_VERSION}-desktop \
     && rm -rf /var/lib/apt/lists/*
