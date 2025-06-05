@@ -1,0 +1,23 @@
+name: Create tag for release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag name"
+        required: true
+        type: string
+
+jobs:
+  create-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.TAG_PUSH_PAT }}
+
+      - name: Create tag
+        run: |
+          git tag ${{ github.event.inputs.tag }}
+          git push origin ${{ github.event.inputs.tag }} --force
+          echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
