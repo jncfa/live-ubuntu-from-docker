@@ -89,11 +89,14 @@ jobs:
             type=registry,ref=${{ env.image-cacher-common-name }}
           cache-to: |
             type=registry,ref=${{ env.image-cacher-name }},mode=max
-      - name: Compress tar archive
-        run: gzip -9 /tmp/buildx-output.tar
+      - name: Compress and split tar archive
+        run: |
+          gzip -9 /tmp/buildx-output.tar
+          cd /tmp
+          split -b 1500m buildx-output.tar.gz buildx-output.tar.gz.part-
       - name: Release
         uses: softprops/action-gh-release@v2.2.1
         if: github.ref_type == 'tag'
         with:
           name: "${{ github.ref_name }} — ${{ steps.date.outputs.date }}"
-          files: "/tmp/buildx-output.tar.gz"
+          files: "/tmp/buildx-output.tar.gz.part-*"
