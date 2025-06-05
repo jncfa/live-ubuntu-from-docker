@@ -37,23 +37,8 @@ on:
         type: string
         default: ""
 jobs:
-  changes:
-    runs-on: ${{ inputs.runner }}
-    outputs:
-      is_changed: ${{ steps.filter.outputs.dockerfile }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Filter build
-        uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filters: |
-            dockerfile:
-              - ${{ inputs.dockerfile }}
   docker:
     runs-on: ${{ inputs.runner }}
-    needs: changes
-    if: inputs.force-build == 'true' || needs.changes.outputs.is_changed == 'true'
     env:
       # add "-{{ inputs.image-variant }}" to the end of the image name if image-variant is set
       image-name: ghcr.io/${{ github.repository_owner }}/${{ inputs.base-label }}${{ inputs.image-variant != '' && format('-{0}', inputs.image-variant) || '' }}:${{ inputs.tag }}
