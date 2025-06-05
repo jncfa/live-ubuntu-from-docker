@@ -83,7 +83,7 @@ jobs:
             ${{ env.image-name }}
             ${{ env.image-name }}-${{ steps.date.outputs.date }}
           build-contexts: ${{ inputs.build-contexts }}
-          outputs: type=tar,dest=/tmp/buildx-output.tar
+          outputs: type=tar,dest=/tmp/${{ inputs.base-label }}-result.tar
           cache-from: |
             type=registry,ref=${{ env.image-cacher-name }}
             type=registry,ref=${{ env.image-cacher-common-name }}
@@ -93,10 +93,10 @@ jobs:
         run: |
           gzip -9 /tmp/buildx-output.tar
           cd /tmp
-          split -b 1500m buildx-output.tar.gz buildx-output.tar.gz.part-
+          split -b 1500m ${{ inputs.base-label }}-result.tar.gz ${{ inputs.base-label }}-result.tar.gz.part-
       - name: Release
         uses: softprops/action-gh-release@v2.2.1
         if: github.ref_type == 'tag'
         with:
           name: "${{ github.ref_name }} — ${{ steps.date.outputs.date }}"
-          files: "/tmp/buildx-output.tar.gz.part-*"
+          files: "/tmp/${{ inputs.base-label }}-result.tar.gz.part-*"
