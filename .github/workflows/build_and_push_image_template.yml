@@ -90,8 +90,9 @@ jobs:
           cache-to: |
             type=registry,ref=${{ env.image-cacher-name }},mode=max
       - name: Compress and split tar archive
+        if: github.ref_type == 'tag'
         run: |
-          gzip -9 /tmp/buildx-output.tar
+          gzip -9 /tmp/${{ inputs.base-label }}-result.tar
           cd /tmp
           split -b 1500m ${{ inputs.base-label }}-result.tar.gz ${{ inputs.base-label }}-result.tar.gz.part-
       - name: Release
