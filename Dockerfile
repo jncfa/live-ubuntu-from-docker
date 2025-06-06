@@ -1,7 +1,7 @@
 ARG UBUNTU_VERSION=noble
 ARG ROS_VERSION=kilted
 ARG TARGETARCH
-ARG OS_NAME="RUbuntu"
+ARG OS_NAME="ROS2-Kilted"
 ARG DISKNAME="Install ${OS_NAME}"
 ARG KERNEL_VARIANT="linux-lowlatency"
 
@@ -334,7 +334,7 @@ full_cd/single
 EOF
 
 RUN cat > /image/.disk/info <<EOF
-    ${OS_NAME}-${ROS_VERSION} based on Ubuntu ${UBUNTU_VERSION} Live Image - ${TARGETARCH}
+    ${OS_NAME} based on Ubuntu ${UBUNTU_VERSION} Live Image - ${TARGETARCH}
 EOF
 
 # get all generated files from squashfs builder
