@@ -297,7 +297,7 @@ RUN apt-get update && apt-get install -y  \
     xorriso \
     grub-common \
     grub-efi \
-    "grub-efi-${TARGETARCH}-signed "\
+    "grub-efi-${TARGETARCH}-signed" \
     shim-signed \
     apt-utils \
     && rm -rf /var/lib/apt/lists/*
