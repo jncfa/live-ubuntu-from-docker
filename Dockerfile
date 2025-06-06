@@ -2,7 +2,8 @@
 ARG UBUNTU_VERSION=noble
 ARG ROS_VERSION=kilted
 ARG TARGETARCH
-ARG DISKNAME="Install RUbuntu"
+ARG OS_NAME="RUbuntu"
+ARG DISKNAME="Install ${OS_NAME}"
 ARG KERNEL_VARIANT="linux-lowlatency"
 
 FROM ubuntu:${UBUNTU_VERSION} AS base
@@ -38,7 +39,10 @@ FROM init-rootfs-cacher-${TARGETARCH:?} AS init-rootfs-cacher
 # added all components to make sure we have all the packages we need
 # minbase variant can be used but it is extremely tricky to specify all packages we need
 # as we get minor breakages all over the place
-RUN debootstrap --merged-usr --arch="${TARGETARCH}" --components=main,restricted,universe,multiverse --keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg  "${UBUNTU_VERSION:?}" /rootfs "${UBUNTU_MIRROR:?}" \
+RUN debootstrap --merged-usr --arch="${TARGETARCH}" \
+    --components=main,restricted,universe,multiverse \
+    --keyring=/usr/share/keyrings/ubuntu-archive-keyring.gpg \
+    "${UBUNTU_VERSION:?}" /rootfs "${UBUNTU_MIRROR:?}" \
     # delete resolv.conf to prevent it from being copied to the final image (systemd autogenerates it)
     && rm /rootfs/etc/resolv.conf \
     # apt cache is also not needed (and makes the image bigger)
@@ -98,9 +102,10 @@ RUN apt-get update && apt-get install -y  \
 # Install ROS2 because I want it :D
 # hadolint ignore=DL4006
 RUN add-apt-repository universe \
-    && curl -vL -o /tmp/ros2-apt-source.deb "https://github.com/ros-infrastructure/ros-apt-source/releases/download/1.1.0/ros2-apt-source_1.1.0.$(. /etc/os-release && echo $VERSION_CODENAME)_all.deb" \
+    && curl -vL -o /tmp/ros2-apt-source.deb \
+    "https://github.com/ros-infrastructure/ros-apt-source/releases/download/1.1.0/ros2-apt-source_1.1.0.$(. /etc/os-release && echo $VERSION_CODENAME)_all.deb" \
     && apt-get install -y /tmp/ros2-apt-source.deb \
-    && apt-get update && apt-get install -y ros-dev-tools ros-${ROS_VERSION}-desktop \
+    && apt-get update && apt-get install -y ros-dev-tools "ros-${ROS_VERSION}-desktop" \
     && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /etc/profile.d && echo "source /opt/ros/${ROS_VERSION}/setup.bash" >> /etc/profile.d/10_source_ros.sh
@@ -165,19 +170,6 @@ RUN apt-get update && apt-get install -y  \
     network-manager-pptp-gnome \
     && rm -rf /var/lib/apt/lists/*
 
-# configured networkmanager to play nice with systemd-resolved
-RUN cat <<EOF > /etc/NetworkManager/NetworkManager.conf
-[main]
-rc-manager=unmanaged
-plugins=ifupdown,keyfile,systemd-resolved
-
-[ifupdown]
-managed=false
-
-[device]
-wifi.scan-rand-mac-address=no
-EOF
-
 # add more customizations to the image
 RUN apt-get update && apt-get install -y  \
     avahi-daemon \
@@ -198,12 +190,12 @@ RUN apt-get update && apt-get install -y  \
 RUN apt-get update && apt-get install -y  \
     grub-common \
     grub-efi \
-    grub-efi-${TARGETARCH}-signed \
+    "grub-efi-${TARGETARCH}-signed" \
     shim-signed \
     && rm -rf /var/lib/apt/lists/*
 
 # disable network manager for installer (to speed up installation)
-RUN dpkg-reconfigure network-manager && rm -f /etc/systemd/system/multi-user.target.wants/NetworkManager.service /etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service
+RUN rm -f /etc/systemd/system/multi-user.target.wants/NetworkManager.service /etc/systemd/system/network-online.target.wants/NetworkManager-wait-online.service
 
 # re-enable after install
 RUN debconf-set-selections <<EOF
@@ -234,7 +226,7 @@ RUN apt-get update && apt-get install -y  \
 # hadolint ignore=DL4006
 RUN apt-get update && apt-get install -y  \
     kmod \
-    ${KERNEL_VARIANT} \
+    "${KERNEL_VARIANT}" \
     linux-firmware \
     && rm -rf /var/lib/apt/lists/*  \
     && kernel=$(ls /lib/modules | head -n1) && depmod -a "${kernel}" && update-initramfs -u -v -k "${kernel}"
@@ -253,7 +245,7 @@ RUN rm -f /etc/apt.conf.d/docker-*
 # use hostplatform to build squashfs to speed up build
 # hadolint ignore=DL3029
 ARG BUILDPLATFORM
-FROM --platform=${BUILDPLATFORM} base AS squashfs-builder
+FROM --platform="${BUILDPLATFORM}" base AS squashfs-builder
 RUN apt-get update && apt-get install -y  \
     squashfs-tools \
     initramfs-tools \
@@ -267,7 +259,7 @@ RUN --mount=type=bind,from=live-image,source=/,dst=/rootfs,ro \
 
 # hadolint ignore=DL4006
 RUN --mount=type=bind,from=live-image,source=/,dst=/rootfs,ro \
-    printf $(du -sx --block-size=1 /rootfs | cut -f1) | tee /image/casper/filesystem.size && \
+    printf "$(du -sx --block-size=1 /rootfs | cut -f1)" | tee /image/casper/filesystem.size && \
     mksquashfs /rootfs /image/casper/filesystem.squashfs \
     -noappend -no-duplicates -no-recovery \
     -wildcards \
@@ -293,6 +285,7 @@ FROM base AS iso-builder
 ARG DISKNAME
 ARG TARGETARCH
 ARG UBUNTU_VERSION
+ARG OS_NAME
 ENV LANG=C.UTF-8
 ARG ROS_VERSION
 
@@ -304,7 +297,7 @@ RUN apt-get update && apt-get install -y  \
     xorriso \
     grub-common \
     grub-efi \
-    grub-efi-${TARGETARCH}-signed \
+    "grub-efi-${TARGETARCH}-signed "\
     shim-signed \
     apt-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -342,7 +335,7 @@ full_cd/single
 EOF
 
 RUN cat > /image/.disk/info <<EOF
-    ROS2Live${ROS_VERSION} Ubuntu $UBUNTU_VERSION Live Image - ${TARGETARCH}
+    ${OS_NAME}-${ROS_VERSION} based on Ubuntu ${UBUNTU_VERSION} Live Image - ${TARGETARCH}
 EOF
 
 # get all generated files from squashfs builder
